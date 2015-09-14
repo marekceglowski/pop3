@@ -15,15 +15,16 @@ class POP3Server {
     protected $username;
     private $password;
 
+    public $deleteSpam = array("emailsupport.untdmarketing.com"); // If found in message, will delete on retrieval
+
     protected $fd;
-
-
+    
     public $bufferSize = 4096;
     public $quit_on_error = true;
 
     public $logbuffer = '';
     public $debug = 0;
-
+    
     public function __construct($host, $port, $username, $password) {
         $this->host = $host;
         $this->port = $port;
@@ -176,9 +177,7 @@ class POP3Server {
 	/**
      * POP3 command for retrieving a list of messages with their IDs.
      *
-     * @param $id - the id of the message to be retrieved
-     * @param $auto_delete - automatically delete the message after retrieval. Defaults to false.
-     * @return array - a list containing pieces of information from the header
+     * @return array - a list containing message IDs and message sizes (in bytes)
      */
     public function cmd_LIST() {
 
@@ -208,7 +207,7 @@ class POP3Server {
         $this->cmd('TOP '.$id.' 0');
         $buffer = $this->read();
         $header = explode("\n", $buffer);
-		if ($auto_delete) {
+		if ($auto_delete || || $this->deleteSpam($header)) {
             $this->cmd_DELE($id);
 		}
 		
@@ -227,7 +226,7 @@ class POP3Server {
     public function cmd_RETR($id, $auto_delete = false) {
         $this->cmd("RETR $id");
         $message = $this->read();
-        if ($auto_delete) {
+        if ($auto_delete || || $this->deleteSpam($header)) {
             $this->cmd_DELE($id);
         }
         return $message;
@@ -274,12 +273,11 @@ class POP3Server {
 
         foreach ($messageList as $id => $size) {
             if ($headers) {
-				$message = $this->cmd_TOP($id, $delete);
-			} else {
-				$message = $this->cmd_RETR($id, $delete);
-			}
-            
-			$messages[] = new $class($id, $message);
+		$message = $this->cmd_TOP($id, $delete);
+	    } else {
+	        $message = $this->cmd_RETR($id, $delete);
+	    }
+            $messages[] = new $class($id, $message);
         }
         $this->cmd_QUIT();
 
@@ -292,6 +290,22 @@ class POP3Server {
 
         return $messages;
     }
+    
+    /**
+     * Function that traverses array of a message and checks for spam to delete.
+     * @param boolean - return whether or not message is spam
+     */
+    public function deleteSpam($message) {
+        foreach ($message as $item) {							// Check all items
+	    foreach ($this->deleteSpam as $spamEmail) {		// Compare against list of known spam
+	        if (strpos($item,$spamEmail)) {					// If spam email found
+	            return true;								// Return true
+	        }
+	    }			 
+        }
+	return false;	// If not found, return false
+    }
+    
 }
 
 class POP3Exception extends Exception {
